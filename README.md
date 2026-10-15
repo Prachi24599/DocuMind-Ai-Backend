@@ -4,7 +4,7 @@
 DocuMind AI is a production-oriented AI document assistant backend API. This repository contains the backend API and its internal modules, designed to be minimal, understandable, and testable.
 
 ## Prerequisites
-- Node.js (version 14 or higher)
+- Node.js (version 20 or higher)
 - npm (Node package manager)
 
 ## Installation
