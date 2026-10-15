@@ -1,0 +1,29 @@
+{
+  "name": "documind-ai-backend",
+  "version": "1.0.0",
+  "description": "Backend API for DocuMind AI, a production-oriented AI document assistant.",
+  "main": "dist/server.js",
+  "scripts": {
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "build": "tsc",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "helmet": "^6.0.1",
+    "zod": "^3.19.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.2",
+    "vitest": "^0.30.0",
+    "supertest": "^6.3.3",
+    "tsx": "^3.12.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "license": "MIT"
+}
