@@ -1,19 +1,16 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import { healthRoutes } from './features/health/health.routes';
-import { notFoundHandler } from './middleware/not-found';
-import { errorHandler } from './middleware/error-handler';
-import { validateEnv } from './config/env';
+import healthRoutes from './features/health/health.routes';
+import notFoundHandler from './middleware/not-found';
+import errorHandler from './middleware/error-handler';
+import { config } from './config/env';
 
 const app = express();
 
-// Validate environment variables
-validateEnv();
-
 // Middleware setup
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN }));
+app.use(cors({ origin: config.CORS_ORIGIN }));
 app.use(express.json({ limit: '100kb' }));
 
 // Health routes

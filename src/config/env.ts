@@ -13,4 +13,4 @@ if (!env.success) {
   process.exit(1);
 }
 
-export const { PORT, NODE_ENV, CORS_ORIGIN } = env.data;
+export const config = env.data;
