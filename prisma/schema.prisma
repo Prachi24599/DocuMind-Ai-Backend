@@ -1,0 +1,74 @@
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "cjs"
+  generatedFileExtension = "ts"
+  importFileExtension    = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum DocumentProcessingStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+model Document {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  ownerId               String                    @db.Uuid
+  storageKey            String                    @db.Text
+  filename              String                    @db.Text
+  status                DocumentProcessingStatus @default(PENDING)
+  createdAt             DateTime                  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime                  @updatedAt @db.Timestamptz(6)
+  conversationDocuments ConversationDocument[]
+
+  @@unique([ownerId, storageKey])
+  @@unique([id, ownerId])
+  @@index([ownerId, status, createdAt])
+}
+
+model Conversation {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  ownerId               String                    @db.Uuid
+  createdAt             DateTime                  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime                  @updatedAt @db.Timestamptz(6)
+  messages              Message[]
+  documents             ConversationDocument[]
+
+  @@unique([id, ownerId])
+  @@index([ownerId, updatedAt])
+}
+
+model Message {
+  id             String       @id @default(uuid()) @db.Uuid
+  ownerId        String       @db.Uuid
+  conversationId String       @db.Uuid
+  role           MessageRole
+  content        String       @db.Text
+  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+  conversation   Conversation @relation(fields: [conversationId, ownerId], references: [id, ownerId], onDelete: Cascade)
+
+  @@index([ownerId, conversationId, createdAt, id])
+}
+
+model ConversationDocument {
+  conversationId String       @db.Uuid
+  documentId     String       @db.Uuid
+  ownerId        String       @db.Uuid
+  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+  conversation   Conversation @relation(fields: [conversationId, ownerId], references: [id, ownerId], onDelete: Cascade)
+  document       Document     @relation(fields: [documentId, ownerId], references: [id, ownerId], onDelete: Cascade)
+
+  @@id([conversationId, documentId])
+  @@index([ownerId, documentId])
+}
