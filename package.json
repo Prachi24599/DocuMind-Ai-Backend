@@ -11,7 +11,7 @@
     "typecheck": "prisma generate && tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
-    "prisma:migration:baseline": "DATABASE_URL=postgresql://127.0.0.1:1/documind DIRECT_URL=postgresql://127.0.0.1:1/documind prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script --output prisma/migrations/20261015000000_init/migration.sql"
+    "prisma:migration:baseline": "DATABASE_URL=postgresql://127.0.0.1:1/documind DIRECT_URL=postgresql://127.0.0.1:1/documind prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script --output prisma/migrations/20261015000000_init/migration.sql && node scripts/append-document-metadata-checks.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
