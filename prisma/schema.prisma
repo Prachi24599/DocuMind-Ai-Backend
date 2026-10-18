@@ -25,16 +25,21 @@ enum MessageRole {
 model Document {
   id                    String                    @id @default(uuid()) @db.Uuid
   ownerId               String                    @db.Uuid
-  storageKey            String                    @db.Text
+  storageKey            String?                   @db.Text
   filename              String                    @db.Text
+  fileSizeBytes         BigInt
+  mimeType              String                    @db.VarChar(127)
+  pageCount             Int?
   status                DocumentProcessingStatus @default(PENDING)
   createdAt             DateTime                  @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime                  @updatedAt @db.Timestamptz(6)
+  deletedAt             DateTime?                 @db.Timestamptz(6)
   conversationDocuments ConversationDocument[]
 
   @@unique([ownerId, storageKey])
   @@unique([id, ownerId])
   @@index([ownerId, status, createdAt])
+  @@index([ownerId, deletedAt, createdAt])
 }
 
 model Conversation {
@@ -67,7 +72,7 @@ model ConversationDocument {
   ownerId        String       @db.Uuid
   createdAt      DateTime     @default(now()) @db.Timestamptz(6)
   conversation   Conversation @relation(fields: [conversationId, ownerId], references: [id, ownerId], onDelete: Cascade)
-  document       Document     @relation(fields: [documentId, ownerId], references: [id, ownerId], onDelete: Cascade)
+  document       Document     @relation(fields: [documentId, ownerId], references: [id, ownerId], onDelete: Restrict)
 
   @@id([conversationId, documentId])
   @@index([ownerId, documentId])
