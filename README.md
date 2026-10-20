@@ -27,6 +27,7 @@ The application requires the following environment variables:
 - `PORT`: The port on which the server will run (default: 3000).
 - `NODE_ENV`: The environment in which the application is running (default: development).
 - `CORS_ORIGIN`: The allowed origin for CORS requests.
+- `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`: Configure both in the backend environment to enable Clerk session-token verification. The secret key is backend-only and must never be placed in frontend code. The frontend sends a Clerk-issued session token as a Bearer token; the backend verifies it with Clerk's Express SDK and restricts authorized parties to `CORS_ORIGIN`.
 - `DATABASE_URL`: Optional PostgreSQL connection URL used at runtime when database access is introduced. It is not required by the health endpoint or ordinary tests.
 - `DIRECT_URL`: Optional direct PostgreSQL URL for Prisma migration tooling, especially when `DATABASE_URL` uses a pooler. Prisma CLI falls back to `DATABASE_URL` if this is unset.
 
@@ -75,12 +76,12 @@ The persistence layer uses Prisma ORM 7.10.0 with the PostgreSQL driver adapter.
 The initial schema is in `prisma/schema.prisma`, and its reviewed SQL is in `prisma/migrations/20261015000000_init/migration.sql`. To reproduce that initial SQL from the schema without a database, run `npm run prisma:migration:baseline`. This command supplies only a credential-free loopback descriptor to Prisma's schema engine; it does not connect. It appends PostgreSQL `CHECK` constraints through `scripts/append-document-metadata-checks.mjs`, because Prisma Schema Language does not currently represent those constraints. Review generated SQL before adding future migrations. Apply reviewed migrations only against the intended database with Prisma Migrate; this repository setup does not apply migrations automatically at startup.
 
 The schema contains:
-- `Document`: owner UUID from Supabase Auth, nullable storage key, filename, byte size, PDF MIME type, optional page count, persistent processing status, timestamps, and optional soft-deletion time.
+- `Document`: UUID `ownerId`, nullable storage key, filename, byte size, PDF MIME type, optional page count, persistent processing status, timestamps, and optional soft-deletion time.
 - `Conversation`: owner UUID and timestamps.
 - `Message`: conversation owner, validated `USER`/`ASSISTANT` role, content, and chronological index.
 - `ConversationDocument`: a many-to-many link for selected documents.
 
-There is deliberately no local `User` model or Supabase auth table. Composite foreign keys include `ownerId` on message and conversation-document relations, preventing a relation from crossing owners; application queries must still scope reads and writes by the authenticated Supabase user ID. These foreign keys do not verify an owner against Supabase Auth. Account deletion and any resulting orphaned rows require an explicit future cleanup policy.
+Clerk user IDs are strings and cannot safely be stored in the existing UUID `ownerId` fields. This batch does not cast IDs, change the schema, or add document routes. Before persisting ownership, approve an internal identity mapping: a minimal follow-up would add a `User` table with a UUID primary key and unique Clerk user ID, then resolve the verified Clerk ID to that UUID for owner-scoped operations. That requires a reviewed schema migration; none is included or applied here. Composite foreign keys include `ownerId` on message and conversation-document relations, preventing a relation from crossing owners; application queries must still scope reads and writes by the resolved internal owner UUID.
 
 Deleting a conversation cascades to its messages and document links. Document removal is represented by setting `deletedAt`; the document row and conversation-document links remain, and future reads/retrieval must exclude rows with `deletedAt` set. A future cleanup can clear `storageKey` after removing the private object. The restrictive document foreign key prevents a physical delete from silently removing historical conversation references. A future soft-delete workflow must explicitly delete or invalidate document-derived searchable content while retaining conversation links; `deletedAt` filtering must exclude the document from new retrieval and AI processing. No document content, chunks, or embeddings are modeled in this batch.
 

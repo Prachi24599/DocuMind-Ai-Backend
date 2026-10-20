@@ -5,8 +5,12 @@ import healthRoutes from './features/health/health.routes';
 import notFoundHandler from './middleware/not-found';
 import errorHandler from './middleware/error-handler';
 import { config } from './config/env';
+import { clerkSessionMiddleware } from './middleware/clerk-auth';
 
 const app = express();
+
+// Clerk must run before other middleware so it can verify session tokens.
+app.use(clerkSessionMiddleware);
 
 // Middleware setup
 app.use(helmet());

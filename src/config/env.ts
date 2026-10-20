@@ -9,8 +9,18 @@ const envSchema = z.object({
   PORT: z.string().default('3000'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   CORS_ORIGIN: z.string().url().default('http://localhost:3000'),
+  CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
+  CLERK_SECRET_KEY: z.string().min(1).optional(),
   DATABASE_URL: postgresUrlSchema,
   DIRECT_URL: postgresUrlSchema,
+}).superRefine((environment, context) => {
+  if (Boolean(environment.CLERK_PUBLISHABLE_KEY) !== Boolean(environment.CLERK_SECRET_KEY)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY must be configured together.',
+      path: [environment.CLERK_SECRET_KEY ? 'CLERK_PUBLISHABLE_KEY' : 'CLERK_SECRET_KEY'],
+    });
+  }
 });
 
 export const parseEnvironment = (environment: Record<string, string | undefined>) =>
