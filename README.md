@@ -28,7 +28,7 @@ The application requires the following environment variables:
 - `NODE_ENV`: The environment in which the application is running (default: development).
 - `CORS_ORIGIN`: The allowed origin for CORS requests.
 - `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`: Configure both in the backend environment to enable Clerk session-token verification. The secret key is backend-only and must never be placed in frontend code. The frontend sends a Clerk-issued session token as a Bearer token; the backend verifies it with Clerk's Express SDK and restricts authorized parties to `CORS_ORIGIN`.
-- `DATABASE_URL`: Optional PostgreSQL connection URL used at runtime when database access is introduced. It is not required by the health endpoint or ordinary tests.
+- `DATABASE_URL`: PostgreSQL connection URL for authenticated user and document operations. It is not required by the health endpoint or ordinary unit/API tests.
 - `DIRECT_URL`: Optional direct PostgreSQL URL for Prisma migration tooling, especially when `DATABASE_URL` uses a pooler. Prisma CLI falls back to `DATABASE_URL` if this is unset.
 
 Do not put credentials in source control. `.env.example` contains no connection string; provide real values through a local `.env` file or secret manager only when a database is available. Configuration errors identify the variable and validation problem without printing its value.
@@ -69,6 +69,73 @@ GET /api/health
 ```
 This will return a JSON response indicating that the API is healthy.
 
+## Document API
+
+All document endpoints require a valid Clerk session token in the `Authorization: Bearer <session-token>` header. The backend obtains the Clerk user ID only from verified Clerk token data, resolves it to an internal UUID `User`, and scopes all document access to that UUID. Request bodies cannot set `ownerId`; document responses omit the internal owner UUID.
+
+Create document metadata (storage/upload is not included):
+
+```http
+POST /api/documents
+Authorization: Bearer <session-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "storageKey": "private/example.pdf",
+  "filename": "example.pdf",
+  "fileSizeBytes": 128,
+  "mimeType": "application/pdf",
+  "pageCount": 2
+}
+```
+
+Returns `201` with document metadata. `fileSizeBytes` is serialized as a decimal string to preserve PostgreSQL `BIGINT` precision.
+
+```json
+{
+  "id": "f4218aad-2cc7-47e7-90b3-0d18bd0eb2f0",
+  "storageKey": "private/example.pdf",
+  "filename": "example.pdf",
+  "fileSizeBytes": "128",
+  "mimeType": "application/pdf",
+  "pageCount": 2,
+  "status": "PENDING",
+  "createdAt": "2026-10-20T12:00:00.000Z",
+  "updatedAt": "2026-10-20T12:00:00.000Z",
+  "deletedAt": null
+}
+```
+
+For `GET /api/documents`, the response is an array using the same document shape, for example:
+
+```json
+[
+  {
+    "id": "f4218aad-2cc7-47e7-90b3-0d18bd0eb2f0",
+    "storageKey": "private/example.pdf",
+    "filename": "example.pdf",
+    "fileSizeBytes": "128",
+    "mimeType": "application/pdf",
+    "pageCount": 2,
+    "status": "PENDING",
+    "createdAt": "2026-10-20T12:00:00.000Z",
+    "updatedAt": "2026-10-20T12:00:00.000Z",
+    "deletedAt": null
+  }
+]
+```
+
+| Method | Path | Success |
+| --- | --- | --- |
+| `POST` | `/api/documents` | `201 Created` and document metadata |
+| `GET` | `/api/documents` | `200 OK` and the authenticated user's active documents |
+| `GET` | `/api/documents/:id` | `200 OK` and the owned active document |
+| `DELETE` | `/api/documents/:id` | `204 No Content` after soft deletion |
+
+Invalid bodies or UUID path parameters return `400`; missing, invalid, or expired credentials return `401`; a document that is missing, deleted, or belongs to another user returns the same `404` response. Persistence failures return a generic `500` response without database details.
+
 ## Database Foundation
 
 The persistence layer uses Prisma ORM 7.10.0 with the PostgreSQL driver adapter. The generated client uses Prisma's `prisma-client` generator in CommonJS mode to match the existing TypeScript/Express module setup. `npm run prisma:generate` generates ignored client code under `src/generated/prisma`; it does not connect to PostgreSQL. `npm run prisma:validate` validates the schema without a database.
@@ -81,7 +148,19 @@ The schema contains:
 - `Message`: conversation owner, validated `USER`/`ASSISTANT` role, content, and chronological index.
 - `ConversationDocument`: a many-to-many link for selected documents.
 
-Clerk user IDs are strings and cannot safely be stored in the existing UUID `ownerId` fields. This batch does not cast IDs, change the schema, or add document routes. Before persisting ownership, approve an internal identity mapping: a minimal follow-up would add a `User` table with a UUID primary key and unique Clerk user ID, then resolve the verified Clerk ID to that UUID for owner-scoped operations. That requires a reviewed schema migration; none is included or applied here. Composite foreign keys include `ownerId` on message and conversation-document relations, preventing a relation from crossing owners; application queries must still scope reads and writes by the resolved internal owner UUID.
+Clerk IDs are stored in `User.clerkUserId`, which is unique; `User.id` is an internal UUID referenced by all ownership fields. User resolution uses a unique-key Prisma upsert, so concurrent first authenticated requests converge on the same internal record. Composite foreign keys include `ownerId` on message and conversation-document relations, preventing a relation from crossing owners; application queries must still scope reads and writes by the resolved internal owner UUID.
+
+### Batch 5 identity migration
+
+The migration `prisma/migrations/20261021000000_add_clerk_user_mapping/migration.sql` creates the User table and adds owner foreign keys as `NOT VALID`. Existing owner UUIDs may have no known Clerk identity, so validating those constraints immediately could fail or require inventing an unsafe identity mapping. PostgreSQL enforces these constraints for new and updated rows while preserving existing rows; historical ownership records remain unvalidated until a verified backfill is completed. Do not mark the migration validated or delete legacy rows without an explicit mapping/retention decision.
+
+After reviewing the migration, apply it only to the Neon **development** branch with `DATABASE_URL` configured for that branch:
+
+```sh
+npx prisma migrate deploy
+```
+
+Do not run this command with production credentials. This implementation does not connect to any database or apply the migration.
 
 Deleting a conversation cascades to its messages and document links. Document removal is represented by setting `deletedAt`; the document row and conversation-document links remain, and future reads/retrieval must exclude rows with `deletedAt` set. A future cleanup can clear `storageKey` after removing the private object. The restrictive document foreign key prevents a physical delete from silently removing historical conversation references. A future soft-delete workflow must explicitly delete or invalidate document-derived searchable content while retaining conversation links; `deletedAt` filtering must exclude the document from new retrieval and AI processing. No document content, chunks, or embeddings are modeled in this batch.
 
@@ -91,7 +170,7 @@ pgvector is not enabled by this migration. A later, deliberate migration must en
 
 ### Database Testing
 
-The ordinary `npm test` suite uses no database credentials and does not connect to PostgreSQL. Future database integration tests should use a disposable PostgreSQL instance, set its `DATABASE_URL` and (if needed) `DIRECT_URL` only in the test environment, apply the checked-in migrations with `npx prisma migrate deploy`, then run the integration tests. Never point this workflow at a shared or production database. Database connectivity and migration application have not been verified against a live database.
+The ordinary `npm test` suite uses no database credentials and does not connect to PostgreSQL; user and document access are tested with mocked Prisma calls. For a local integration test, use a disposable development database and apply migrations explicitly. Never point a test workflow at a production database.
 
 ## Directory Structure
 ```

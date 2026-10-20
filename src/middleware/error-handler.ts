@@ -6,7 +6,7 @@ const errorHandler = (err: any, req: Request, res: Response, next: NextFunction)
         ? 'Malformed JSON'
         : err.type === 'entity.too.large'
             ? 'Payload Too Large'
-            : statusCode === 500 ? 'Internal Server Error' : err.message;
+            : statusCode >= 500 ? 'Internal Server Error' : err.message;
     const response = {
         status: 'error',
         message,

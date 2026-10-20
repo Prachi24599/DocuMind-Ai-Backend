@@ -6,6 +6,7 @@ import notFoundHandler from './middleware/not-found';
 import errorHandler from './middleware/error-handler';
 import { config } from './config/env';
 import { clerkSessionMiddleware } from './middleware/clerk-auth';
+import documentRoutes from './features/documents/document.routes';
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use(express.json({ limit: '100kb' }));
 
 // Health routes
 app.use('/api/health', healthRoutes);
+app.use('/api/documents', documentRoutes);
 
 // Not found handler
 app.use(notFoundHandler);

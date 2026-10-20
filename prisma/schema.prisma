@@ -23,17 +23,18 @@ enum MessageRole {
 }
 
 model Document {
-  id                    String                    @id @default(uuid()) @db.Uuid
-  ownerId               String                    @db.Uuid
-  storageKey            String?                   @db.Text
-  filename              String                    @db.Text
+  id                    String                   @id @default(uuid()) @db.Uuid
+  ownerId               String                   @db.Uuid
+  storageKey            String?                  @db.Text
+  filename              String                   @db.Text
   fileSizeBytes         BigInt
-  mimeType              String                    @db.VarChar(127)
+  mimeType              String                   @db.VarChar(127)
   pageCount             Int?
   status                DocumentProcessingStatus @default(PENDING)
-  createdAt             DateTime                  @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime                  @updatedAt @db.Timestamptz(6)
-  deletedAt             DateTime?                 @db.Timestamptz(6)
+  createdAt             DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime                 @updatedAt @db.Timestamptz(6)
+  deletedAt             DateTime?                @db.Timestamptz(6)
+  owner                 User                     @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   conversationDocuments ConversationDocument[]
 
   @@unique([ownerId, storageKey])
@@ -43,12 +44,13 @@ model Document {
 }
 
 model Conversation {
-  id                    String                    @id @default(uuid()) @db.Uuid
-  ownerId               String                    @db.Uuid
-  createdAt             DateTime                  @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime                  @updatedAt @db.Timestamptz(6)
-  messages              Message[]
-  documents             ConversationDocument[]
+  id        String                 @id @default(uuid()) @db.Uuid
+  ownerId   String                 @db.Uuid
+  createdAt DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime               @updatedAt @db.Timestamptz(6)
+  owner     User                   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  messages  Message[]
+  documents ConversationDocument[]
 
   @@unique([id, ownerId])
   @@index([ownerId, updatedAt])
@@ -61,6 +63,7 @@ model Message {
   role           MessageRole
   content        String       @db.Text
   createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+  owner          User         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   conversation   Conversation @relation(fields: [conversationId, ownerId], references: [id, ownerId], onDelete: Cascade)
 
   @@index([ownerId, conversationId, createdAt, id])
@@ -71,9 +74,21 @@ model ConversationDocument {
   documentId     String       @db.Uuid
   ownerId        String       @db.Uuid
   createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+  owner          User         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   conversation   Conversation @relation(fields: [conversationId, ownerId], references: [id, ownerId], onDelete: Cascade)
   document       Document     @relation(fields: [documentId, ownerId], references: [id, ownerId], onDelete: Restrict)
 
   @@id([conversationId, documentId])
   @@index([ownerId, documentId])
+}
+
+model User {
+  id            String                 @id @default(uuid()) @db.Uuid
+  clerkUserId   String                 @unique @db.Text
+  createdAt     DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime               @updatedAt @db.Timestamptz(6)
+  documents     Document[]
+  conversations Conversation[]
+  messages      Message[]
+  documentLinks ConversationDocument[]
 }

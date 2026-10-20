@@ -17,6 +17,8 @@ const documentInputSchema = z.object({
 export type CreateDocumentInput = z.infer<typeof documentInputSchema>;
 
 export class DocumentValidationError extends Error {
+  readonly statusCode = 400;
+
   constructor(message: string) {
     super(message);
     this.name = 'DocumentValidationError';
@@ -24,6 +26,8 @@ export class DocumentValidationError extends Error {
 }
 
 export class DocumentNotFoundError extends Error {
+  readonly statusCode = 404;
+
   constructor() {
     super('Document not found.');
     this.name = 'DocumentNotFoundError';
@@ -31,6 +35,8 @@ export class DocumentNotFoundError extends Error {
 }
 
 export class DocumentPersistenceError extends Error {
+  readonly statusCode = 500;
+
   constructor() {
     super('Unable to complete the document operation.');
     this.name = 'DocumentPersistenceError';
