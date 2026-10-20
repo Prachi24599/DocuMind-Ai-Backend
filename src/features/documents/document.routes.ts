@@ -1,16 +1,17 @@
 import { Router } from 'express';
 import { requireAuthenticatedUser } from '../../middleware/clerk-auth';
 import {
-  createDocumentHandler,
   deleteDocumentHandler,
   getDocumentHandler,
   listDocumentsHandler,
 } from './document.controller';
+import { uploadDocumentHandler } from './document-upload.controller';
+import { requireObjectStorageConfiguration, uploadPdf } from './upload.middleware';
 
 const router = Router();
 
 router.use(requireAuthenticatedUser);
-router.post('/', createDocumentHandler);
+router.post('/upload', requireObjectStorageConfiguration, uploadPdf, uploadDocumentHandler);
 router.get('/', listDocumentsHandler);
 router.get('/:id', getDocumentHandler);
 router.delete('/:id', deleteDocumentHandler);

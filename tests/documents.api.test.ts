@@ -107,36 +107,7 @@ describe('authenticated document API', () => {
     expect(prismaMocks.userUpsert).not.toHaveBeenCalled();
   });
 
-  it('creates metadata for the internal user resolved from the verified Clerk identity', async () => {
-    const response = await authorized(request(app).post('/api/documents')
-      .send({
-        storageKey: 'private/example.pdf',
-        filename: 'example.pdf',
-        fileSizeBytes: 128,
-        mimeType: 'application/pdf',
-        pageCount: 2,
-      }));
-
-    expect(response.status).toBe(201);
-    expect(response.body).toMatchObject({
-      id: documentId,
-      filename: 'example.pdf',
-      fileSizeBytes: '128',
-    });
-    expect(response.body).not.toHaveProperty('ownerId');
-    expect(prismaMocks.create).toHaveBeenCalledWith({
-      data: {
-        storageKey: 'private/example.pdf',
-        filename: 'example.pdf',
-        fileSizeBytes: 128,
-        mimeType: 'application/pdf',
-        pageCount: 2,
-        ownerId,
-      },
-    });
-  });
-
-  it('rejects invalid document bodies including caller-supplied owner IDs', async () => {
+  it('does not expose a metadata-only document creation route', async () => {
     const response = await authorized(request(app).post('/api/documents')
       .send({
         storageKey: 'private/example.pdf',
@@ -146,8 +117,7 @@ describe('authenticated document API', () => {
         ownerId: '00000000-0000-0000-0000-000000000001',
       }));
 
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({ status: 'error', message: 'Invalid request.' });
+    expect(response.status).toBe(404);
     expect(prismaMocks.create).not.toHaveBeenCalled();
   });
 

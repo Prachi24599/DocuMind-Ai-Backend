@@ -1,7 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { z } from 'zod';
 import {
-  createDocument,
   getDocument,
   listDocuments,
   softDeleteDocument,
@@ -9,13 +8,6 @@ import {
 import { resolveUserByClerkId } from '../users/user.service';
 
 const uuidSchema = z.string().uuid();
-const createDocumentSchema = z.object({
-  storageKey: z.string().trim().min(1),
-  filename: z.string().trim().min(1),
-  fileSizeBytes: z.number().int().positive().refine(Number.isSafeInteger),
-  mimeType: z.literal('application/pdf'),
-  pageCount: z.number().int().positive().nullable().optional(),
-}).strict();
 
 const sendInvalidInput = (res: Response): void => {
   res.status(400).json({ status: 'error', message: 'Invalid request.' });
@@ -42,25 +34,9 @@ const getOwnerId = async (req: Request): Promise<string> => {
 };
 
 const toDocumentResponse = (document: Awaited<ReturnType<typeof getDocument>>) => {
-  const { ownerId: _ownerId, fileSizeBytes, ...publicDocument } = document;
+  const { ownerId: _ownerId, storageKey: _storageKey, fileSizeBytes, ...publicDocument } = document;
   return { ...publicDocument, fileSizeBytes: fileSizeBytes.toString() };
 };
-
-export const createDocumentHandler: RequestHandler = handleAsync(async (req, res, next) => {
-  const input = createDocumentSchema.safeParse(req.body);
-  if (!input.success) {
-    sendInvalidInput(res);
-    return;
-  }
-
-  try {
-    const ownerId = await getOwnerId(req);
-    const document = await createDocument(ownerId, input.data);
-    res.status(201).json(toDocumentResponse(document));
-  } catch (error) {
-    sendError(error, next);
-  }
-});
 
 export const listDocumentsHandler: RequestHandler = handleAsync(async (req, res, next) => {
   try {

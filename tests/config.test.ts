@@ -41,6 +41,28 @@ describe('environment configuration', () => {
     }
   });
 
+  it('accepts complete R2 storage configuration and defaults the upload limit', () => {
+    const result = parseEnvironment({
+      R2_ACCOUNT_ID: 'account-example',
+      R2_ACCESS_KEY_ID: 'access-example',
+      R2_SECRET_ACCESS_KEY: 'secret-example',
+      R2_BUCKET_NAME: 'documind-private',
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.MAX_UPLOAD_SIZE_BYTES).toBe(10 * 1024 * 1024);
+    }
+  });
+
+  it('rejects partial R2 configuration and upload limits above the supported maximum', () => {
+    const partialR2 = parseEnvironment({ R2_ACCOUNT_ID: 'account-example' });
+    const oversizedLimit = parseEnvironment({ MAX_UPLOAD_SIZE_BYTES: String(51 * 1024 * 1024) });
+
+    expect(partialR2.success).toBe(false);
+    expect(oversizedLimit.success).toBe(false);
+  });
+
   it('rejects non-PostgreSQL database URLs without echoing the value', () => {
     const result = parseEnvironment({ DATABASE_URL: 'https://invalid.example/secret' });
 

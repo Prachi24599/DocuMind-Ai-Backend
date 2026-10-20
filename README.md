@@ -27,6 +27,8 @@ The application requires the following environment variables:
 - `PORT`: The port on which the server will run (default: 3000).
 - `NODE_ENV`: The environment in which the application is running (default: development).
 - `CORS_ORIGIN`: The allowed origin for CORS requests.
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME`: Configure all four backend-only values to enable private Cloudflare R2 storage. Use an R2 API token scoped to the upload bucket with Object Read & Write permissions. Never expose the secret access key to the frontend.
+- `MAX_UPLOAD_SIZE_BYTES`: Optional maximum PDF size in bytes (default `10485760`, or 10 MiB; maximum allowed configuration is 50 MiB).
 - `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`: Configure both in the backend environment to enable Clerk session-token verification. The secret key is backend-only and must never be placed in frontend code. The frontend sends a Clerk-issued session token as a Bearer token; the backend verifies it with Clerk's Express SDK and restricts authorized parties to `CORS_ORIGIN`.
 - `DATABASE_URL`: PostgreSQL connection URL for authenticated user and document operations. It is not required by the health endpoint or ordinary unit/API tests.
 - `DIRECT_URL`: Optional direct PostgreSQL URL for Prisma migration tooling, especially when `DATABASE_URL` uses a pooler. Prisma CLI falls back to `DATABASE_URL` if this is unset.
@@ -73,34 +75,31 @@ This will return a JSON response indicating that the API is healthy.
 
 All document endpoints require a valid Clerk session token in the `Authorization: Bearer <session-token>` header. The backend obtains the Clerk user ID only from verified Clerk token data, resolves it to an internal UUID `User`, and scopes all document access to that UUID. Request bodies cannot set `ownerId`; document responses omit the internal owner UUID.
 
-Create document metadata (storage/upload is not included):
+Upload a PDF and create its metadata:
 
 ```http
-POST /api/documents
+POST /api/documents/upload
 Authorization: Bearer <session-token>
-Content-Type: application/json
+Content-Type: multipart/form-data
 ```
 
-```json
-{
-  "storageKey": "private/example.pdf",
-  "filename": "example.pdf",
-  "fileSizeBytes": 128,
-  "mimeType": "application/pdf",
-  "pageCount": 2
-}
+Send one multipart file field named `file`. The backend checks the declared PDF media type, `%PDF-` signature, and `%%EOF` marker, uploads to private storage using an unpredictable server-generated key, then creates the document record. No storage key, owner ID, object URL, or provider information is accepted from or returned to the client.
+
+```sh
+curl -X POST 'https://api.example.com/api/documents/upload' \
+  -H 'Authorization: Bearer <clerk-session-token>' \
+  -F 'file=@example.pdf;type=application/pdf'
 ```
 
-Returns `201` with document metadata. `fileSizeBytes` is serialized as a decimal string to preserve PostgreSQL `BIGINT` precision.
+Returns `201` with public document metadata. `fileSizeBytes` is serialized as a decimal string to preserve PostgreSQL `BIGINT` precision.
 
 ```json
 {
   "id": "f4218aad-2cc7-47e7-90b3-0d18bd0eb2f0",
-  "storageKey": "private/example.pdf",
   "filename": "example.pdf",
   "fileSizeBytes": "128",
   "mimeType": "application/pdf",
-  "pageCount": 2,
+  "pageCount": null,
   "status": "PENDING",
   "createdAt": "2026-10-20T12:00:00.000Z",
   "updatedAt": "2026-10-20T12:00:00.000Z",
@@ -108,17 +107,16 @@ Returns `201` with document metadata. `fileSizeBytes` is serialized as a decimal
 }
 ```
 
-For `GET /api/documents`, the response is an array using the same document shape, for example:
+For `GET /api/documents`, the response is an array using the same public metadata shape, for example:
 
 ```json
 [
   {
     "id": "f4218aad-2cc7-47e7-90b3-0d18bd0eb2f0",
-    "storageKey": "private/example.pdf",
     "filename": "example.pdf",
     "fileSizeBytes": "128",
     "mimeType": "application/pdf",
-    "pageCount": 2,
+    "pageCount": null,
     "status": "PENDING",
     "createdAt": "2026-10-20T12:00:00.000Z",
     "updatedAt": "2026-10-20T12:00:00.000Z",
@@ -129,12 +127,14 @@ For `GET /api/documents`, the response is an array using the same document shape
 
 | Method | Path | Success |
 | --- | --- | --- |
-| `POST` | `/api/documents` | `201 Created` and document metadata |
+| `POST` | `/api/documents/upload` | `201 Created` and document metadata |
 | `GET` | `/api/documents` | `200 OK` and the authenticated user's active documents |
 | `GET` | `/api/documents/:id` | `200 OK` and the owned active document |
 | `DELETE` | `/api/documents/:id` | `204 No Content` after soft deletion |
 
-Invalid bodies or UUID path parameters return `400`; missing, invalid, or expired credentials return `401`; a document that is missing, deleted, or belongs to another user returns the same `404` response. Persistence failures return a generic `500` response without database details.
+Missing files return `400`, invalid PDF data returns `415`, oversized uploads return `413`, and missing, invalid, or expired credentials return `401`. A document that is missing, deleted, or belongs to another user returns the same `404` response. Storage and persistence failures return safe errors without provider or database details. If metadata creation fails after upload, the backend attempts to remove the uploaded object.
+
+Cloudflare R2 setup: create a private bucket and an R2 API token scoped to that bucket with Object Read & Write permission. Set the four R2 backend variables in your development environment. Do not configure a public bucket domain or expose the credentials to the frontend. No live upload is available until development credentials and a private bucket have been configured.
 
 ## Database Foundation
 
