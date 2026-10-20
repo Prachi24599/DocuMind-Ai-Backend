@@ -20,7 +20,7 @@ DocuMind AI is a production-oriented AI document assistant backend API. This rep
    ```
 
 3. Set up environment variables:
-   - Copy `.env.example` to `.env` and fill in values required for your environment. Database URLs are optional for the health endpoint and ordinary tests.
+   - Copy `.env.example` to `.env` and fill in values required for your environment. Set `CORS_ORIGIN` to the exact browser origin serving the frontend.
 
 ## Environment Setup
 The application requires the following environment variables:
@@ -36,10 +36,19 @@ The application requires the following environment variables:
 Do not put credentials in source control. `.env.example` contains no connection string; provide real values through a local `.env` file or secret manager only when a database is available. Configuration errors identify the variable and validation problem without printing its value.
 
 ## Development
-To start the development server, run:
+For local development, the frontend Vite server defaults to `http://localhost:5173` and calls the backend at `http://localhost:3000`. Set backend `CORS_ORIGIN=http://localhost:5173` and frontend `VITE_API_BASE_URL=http://localhost:3000`. In separate terminals, run `npm run dev` from each repository:
+
+Backend:
 ```
 npm run dev
 ```
+
+Frontend:
+```
+npm run dev
+```
+
+The backend's `npm run dev` generates the Prisma client and starts Express using `.env`; it does not apply migrations.
 
 ## Testing
 To run the tests, use:

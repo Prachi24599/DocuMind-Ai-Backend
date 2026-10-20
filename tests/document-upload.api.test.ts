@@ -32,6 +32,9 @@ const authMocks = vi.hoisted(() => ({
 const prismaMocks = vi.hoisted(() => ({
   userUpsert: vi.fn(),
   create: vi.fn(),
+  findMany: vi.fn(),
+  findUnique: vi.fn(),
+  updateMany: vi.fn(),
 }));
 const storageMocks = vi.hoisted(() => ({
   upload: vi.fn(),
@@ -55,7 +58,12 @@ vi.mock('../src/config/env', () => ({
 vi.mock('../src/database/client', () => ({
   getPrismaClient: () => ({
     user: { upsert: prismaMocks.userUpsert },
-    document: { create: prismaMocks.create },
+    document: {
+      create: prismaMocks.create,
+      findMany: prismaMocks.findMany,
+      findUnique: prismaMocks.findUnique,
+      updateMany: prismaMocks.updateMany,
+    },
   }),
 }));
 vi.mock('../src/features/documents/object-storage', () => ({
@@ -85,6 +93,7 @@ const storedDocument = {
   updatedAt: new Date('2026-10-20T12:00:00.000Z'),
   deletedAt: null,
 };
+let persistedDocument: typeof storedDocument | null = null;
 
 const uploadRequest = (token = 'Bearer valid-session-token') =>
   request(app).post('/api/documents/upload').set('Authorization', token);
@@ -92,14 +101,48 @@ const uploadRequest = (token = 'Bearer valid-session-token') =>
 describe('private PDF upload API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    persistedDocument = null;
     prismaMocks.userUpsert.mockImplementation(({ where }: { where: { clerkUserId: string } }) => ({
       id: where.clerkUserId === 'user_other_verified' ? otherOwnerId : ownerId,
       clerkUserId: where.clerkUserId,
     }));
-    prismaMocks.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({
-      ...storedDocument,
-      ...data,
-    }));
+    prismaMocks.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+      persistedDocument = { ...storedDocument, ...data };
+      return persistedDocument;
+    });
+    prismaMocks.findMany.mockImplementation(({ where }: { where: { ownerId: string } }) =>
+      persistedDocument
+      && persistedDocument.ownerId === where.ownerId
+      && persistedDocument.deletedAt === null
+        ? [persistedDocument]
+        : []);
+    prismaMocks.findUnique.mockImplementation(({
+      where,
+    }: {
+      where: { id_ownerId: { id: string; ownerId: string }; deletedAt: null };
+    }) =>
+      persistedDocument
+      && persistedDocument.id === where.id_ownerId.id
+      && persistedDocument.ownerId === where.id_ownerId.ownerId
+      && persistedDocument.deletedAt === where.deletedAt
+        ? persistedDocument
+        : null);
+    prismaMocks.updateMany.mockImplementation(({
+      where,
+      data,
+    }: {
+      where: { id: string; ownerId: string; deletedAt: null };
+      data: { deletedAt: Date; storageKey: null };
+    }) => {
+      if (!persistedDocument
+        || persistedDocument.id !== where.id
+        || persistedDocument.ownerId !== where.ownerId
+        || persistedDocument.deletedAt !== where.deletedAt) {
+        return { count: 0 };
+      }
+      persistedDocument = { ...persistedDocument, ...data };
+      return { count: 1 };
+    });
     storageMocks.upload.mockResolvedValue(undefined);
     storageMocks.remove.mockResolvedValue(undefined);
   });
@@ -146,6 +189,31 @@ describe('private PDF upload API', () => {
     });
     expect(storageMocks.upload.mock.invocationCallOrder[0])
       .toBeLessThan(prismaMocks.create.mock.invocationCallOrder[0]);
+  });
+
+  it('completes the upload, list, retrieve, and soft-delete lifecycle for the authenticated owner', async () => {
+    const upload = await uploadRequest()
+      .attach('file', pdfBuffer, { filename: 'portfolio.pdf', contentType: 'application/pdf' });
+    const list = await request(app).get('/api/documents')
+      .set('Authorization', 'Bearer valid-session-token');
+    const retrieved = await request(app).get(`/api/documents/${storedDocument.id}`)
+      .set('Authorization', 'Bearer valid-session-token');
+    const deleted = await request(app).delete(`/api/documents/${storedDocument.id}`)
+      .set('Authorization', 'Bearer valid-session-token');
+    const afterDelete = await request(app).get('/api/documents')
+      .set('Authorization', 'Bearer valid-session-token');
+    const retrieveAfterDelete = await request(app).get(`/api/documents/${storedDocument.id}`)
+      .set('Authorization', 'Bearer valid-session-token');
+
+    expect(upload.status).toBe(201);
+    expect(list.status).toBe(200);
+    expect(list.body).toHaveLength(1);
+    expect(retrieved.status).toBe(200);
+    expect(deleted.status).toBe(204);
+    expect(afterDelete.status).toBe(200);
+    expect(afterDelete.body).toEqual([]);
+    expect(retrieveAfterDelete.status).toBe(404);
+    expect(storageMocks.remove).not.toHaveBeenCalled();
   });
 
   it('rejects missing file, invalid MIME type, and invalid PDF contents', async () => {
